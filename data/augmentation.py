@@ -3,95 +3,82 @@
 import numpy as np
 import pandas as pd
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from typing import Tuple, Optional
+from typing import Tuple
 
 
-class Augmentor:
-    def __init__(
-        self,
-        rotation_range: int = 30,
-        width_shift_range: float = 0.1,
-        height_shift_range: float = 0.1,
-        shear_range: float = 0.1,
-        zoom_range: float = 0.15,
-        brightness_range: Tuple[float, float] = (0.8, 1.2),
-        horizontal_flip: bool = True,
-        vertical_flip: bool = False,
-        fill_mode: str = 'nearest',
-        max_samples_per_class: Optional[int] = 7500,
-        seed: int = 42
-    ):
-        """
-        Initialize the augmentation pipeline with custom transformations.
-        """
-        self.generator = ImageDataGenerator(
-            rotation_range=rotation_range,
-            width_shift_range=width_shift_range,
-            height_shift_range=height_shift_range,
-            shear_range=shear_range,
-            zoom_range=zoom_range,
-            brightness_range=brightness_range,
-            horizontal_flip=horizontal_flip,
-            vertical_flip=vertical_flip,
-            fill_mode=fill_mode
-        )
-        self.max_samples_per_class = max_samples_per_class
-        self.seed = seed
+def get_augmentation_pipeline() -> ImageDataGenerator:
+    """
+    Returns a configured Keras ImageDataGenerator with advanced transformations.
+    """
+    return ImageDataGenerator(
+        rotation_range=25,
+        width_shift_range=0.15,
+        height_shift_range=0.15,
+        shear_range=0.15,
+        zoom_range=0.2,
+        horizontal_flip=True,
+        fill_mode='nearest'
+    )
 
-    def augment_class(self, class_images: np.ndarray, label: int, augment_count: int) -> pd.DataFrame:
-        """
-        Augment a specific class to reach a desired sample count.
 
-        Args:
-            class_images (np.ndarray): Array of images belonging to one class.
-            label (int): The class label for the images.
-            augment_count (int): Number of augmented samples to generate.
+def balance_classes(df: pd.DataFrame, max_per_class: int, seed: int = 42) -> pd.DataFrame:
+    """
+    Limits each class in the DataFrame to a maximum number of samples.
+    """
+    balanced_df = (
+        df.groupby('label')
+        .apply(lambda x: x.sample(min(len(x), max_per_class), random_state=seed))
+        .reset_index(drop=True)
+    )
+    return balanced_df
 
-        Returns:
-            pd.DataFrame: DataFrame with columns 'image', 'label'
-        """
-        rows = []
-        image_stream = self.generator.flow(class_images, batch_size=1, seed=self.seed)
-        for _ in range(augment_count):
-            augmented_image = image_stream.next()[0].astype('uint8')
-            rows.append({'image': augmented_image, 'label': label})
-        return pd.DataFrame(rows)
 
-    def balance_dataset(self, df: pd.DataFrame, label_column: str = 'label', image_column: str = 'image') -> pd.DataFrame:
-        """
-        Perform class balancing through augmentation.
+def augment_dataframe(df: pd.DataFrame, max_per_class: int, image_key='image') -> pd.DataFrame:
+    """
+    Performs class-wise augmentation to expand minority classes up to max_per_class.
+    Returns a new DataFrame with augmented images and balanced classes.
+    """
+    augmenter = get_augmentation_pipeline()
+    augmented_entries = []
 
-        Args:
-            df (pd.DataFrame): Input DataFrame with 'image' and 'label' columns.
-            label_column (str): Column name for labels.
-            image_column (str): Column name for image arrays.
+    class_counts = df['label'].value_counts().to_dict()
 
-        Returns:
-            pd.DataFrame: Balanced DataFrame with augmented samples.
-        """
-        print("[INFO] Starting class balancing via augmentation...")
-        augmented_records = []
+    for label in df['label'].unique():
+        class_subset = df[df['label'] == label]
+        current_count = len(class_subset)
 
-        for label in sorted(df[label_column].unique()):
-            class_subset = df[df[label_column] == label]
-            num_existing = len(class_subset)
-            if self.max_samples_per_class is None or num_existing >= self.max_samples_per_class:
-                print(f"[INFO] Class {label} already has {num_existing} samples. Skipping augmentation.")
-                continue
+        if current_count >= max_per_class:
+            continue  # Already enough data
 
-            images = np.stack(class_subset[image_column].values)
-            augment_needed = self.max_samples_per_class - num_existing
-            print(f"[INFO] Augmenting class {label} with {augment_needed} new samples...")
+        needed = max_per_class - current_count
+        images_to_augment = class_subset.sample(min(needed, current_count), replace=True, random_state=42)
 
-            aug_df = self.augment_class(images, label, augment_needed)
-            augmented_records.append(aug_df)
+        print(f"[INFO] Augmenting class {label}: +{needed} samples")
 
-        if augmented_records:
-            augmented_df = pd.concat(augmented_records, ignore_index=True)
-            balanced_df = pd.concat([df, augmented_df], ignore_index=True)
-        else:
-            balanced_df = df.copy()
+        for idx in range(needed):
+            original_image = images_to_augment.iloc[idx % len(images_to_augment)][image_key]
+            image_tensor = np.expand_dims(original_image, axis=0)
+            aug_iter = augmenter.flow(image_tensor, batch_size=1)
 
-        balanced_df = balanced_df.sample(frac=1, random_state=self.seed).reset_index(drop=True)
-        print(f"[INFO] Augmentation complete. Total samples after augmentation: {len(balanced_df)}")
-        return balanced_df
+            aug_img = next(aug_iter)[0].astype(np.uint8)
+            augmented_entries.append({'image_path': None, 'label': label, image_key: aug_img})
+
+    augmented_df = pd.DataFrame(augmented_entries)
+    final_df = pd.concat([df, augmented_df], ignore_index=True).sample(frac=1, random_state=42).reset_index(drop=True)
+
+    return final_df
+
+
+def summarize_augmented_data(df: pd.DataFrame):
+    """
+    Prints class distribution after augmentation.
+    """
+    print("\n[INFO] Final Dataset Summary:")
+    class_counts = df['label'].value_counts().sort_index()
+    print("-" * 50)
+    print(f"{'Label':<10} {'Samples':<10}")
+    print("-" * 50)
+    for label, count in class_counts.items():
+        print(f"{label:<10} {count:<10}")
+    print("-" * 50)
+    print(f"{'Total':<10} {class_counts.sum():<10}")
