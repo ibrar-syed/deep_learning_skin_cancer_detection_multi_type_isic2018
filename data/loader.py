@@ -1,94 +1,91 @@
 # data/loader.py
 
 import os
-import numpy as np
 import pandas as pd
+import numpy as np
 from PIL import Image
-from concurrent.futures import ThreadPoolExecutor
+import concurrent.futures
 import multiprocessing
 from typing import Tuple, Dict, List
 
 
-class ImageLoader:
-    def __init__(self, root_dir: str, image_size: Tuple[int, int] = (100, 75), limit_per_class: int = 7500):
-        """
-        Initialize the image loader.
-
-        Args:
-            root_dir (str): Root directory containing subfolders of labeled images.
-            image_size (Tuple[int, int]): Size to resize each image to (width, height).
-            limit_per_class (int): Max number of images to retain per class.
-        """
-        self.root_dir = root_dir
-        self.image_size = image_size
-        self.limit_per_class = limit_per_class
-        self.max_workers = multiprocessing.cpu_count()
-        self.label_map = self._create_label_map()
-
-    def _create_label_map(self) -> Dict[int, str]:
-        """Generate a mapping of integer labels to folder names (class labels)."""
-        label_names = sorted(os.listdir(self.root_dir))
-        return {idx: name for idx, name in enumerate(label_names)}
-
-    def _fetch_image_paths(self) -> pd.DataFrame:
-        """Create DataFrame of image paths and integer labels."""
-        records = []
-        for label_idx, class_name in self.label_map.items():
-            class_dir = os.path.join(self.root_dir, class_name)
-            for fname in os.listdir(class_dir):
-                image_path = os.path.join(class_dir, fname)
-                if os.path.isfile(image_path):
-                    records.append({'image_path': image_path, 'label': label_idx})
-        df = pd.DataFrame(records)
-        return df
-
-    def _resize_single_image(self, path: str) -> np.ndarray:
-        """Open and resize a single image, returning its array."""
-        try:
-            with Image.open(path) as img:
-                resized = img.resize(self.image_size)
-                return np.asarray(resized)
-        except Exception as e:
-            print(f"[WARNING] Failed to process image {path}: {e}")
-            return np.zeros((*self.image_size, 3), dtype=np.uint8)  # fallback blank image
-
-    def _parallel_resize(self, image_paths: List[str]) -> List[np.ndarray]:
-        """Parallel resize using multithreading."""
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            resized_images = list(executor.map(self._resize_single_image, image_paths))
-        return resized_images
-
-    def load_dataset(self) -> Tuple[pd.DataFrame, Dict[int, str]]:
-        """
-        Loads the dataset into a DataFrame with columns:
-        - image_path
-        - label (int)
-        - image (np.ndarray)
-
-        Returns:
-            df (pd.DataFrame): Preprocessed image DataFrame.
-            label_map (Dict[int, str]): Mapping of label index to class name.
-        """
-        print("[INFO] Collecting image paths...")
-        df = self._fetch_image_paths()
-
-        # Limit per class
-        print(f"[INFO] Limiting to {self.limit_per_class} samples per class...")
-        df = df.groupby("label").apply(lambda x: x.head(self.limit_per_class)).reset_index(drop=True)
-
-        print("[INFO] Resizing images in parallel...")
-        image_arrays = self._parallel_resize(df['image_path'].tolist())
-        df['image'] = image_arrays
-
-        print("[INFO] Dataset loading complete.")
-        return df, self.label_map
+def get_class_mapping(dataset_root: str) -> Dict[int, str]:
+    """
+    Maps numeric class indices to folder names (class labels).
+    """
+    class_names = sorted(os.listdir(dataset_root))
+    return {idx: name for idx, name in enumerate(class_names)}
 
 
-# Optional test runner
-if __name__ == "__main__":
-    data_path = "/your/dataset/path"
-    loader = ImageLoader(data_path)
-    df, label_map = loader.load_dataset()
+def list_images_with_labels(dataset_root: str) -> pd.DataFrame:
+    """
+    Generates a dataframe with image paths and numeric labels.
+    """
+    image_entries = []
+    class_map = get_class_mapping(dataset_root)
 
-    print(df.head())
-    print(label_map)
+    for label, folder in class_map.items():
+        folder_path = os.path.join(dataset_root, folder)
+        for filename in os.listdir(folder_path):
+            if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.pgm')):
+                image_path = os.path.join(folder_path, filename)
+                image_entries.append({"image_path": image_path, "label": label})
+
+    df = pd.DataFrame(image_entries)
+    return df
+
+
+def resize_image(image_path: str, target_size: Tuple[int, int] = (224, 224)) -> np.ndarray:
+    """
+    Loads and resizes an image to the specified target size.
+    """
+    try:
+        image = Image.open(image_path).convert("RGB")
+        image_resized = image.resize(target_size)
+        return np.array(image_resized)
+    except Exception as e:
+        print(f"[WARN] Failed to load image {image_path}: {e}")
+        return np.zeros((*target_size, 3), dtype=np.uint8)  # fallback
+
+
+def parallel_image_loading(df: pd.DataFrame, num_workers: int = None) -> pd.DataFrame:
+    """
+    Loads and resizes all images using multithreading.
+    """
+    num_workers = num_workers or multiprocessing.cpu_count()
+    image_paths = df["image_path"].tolist()
+
+    print(f"[INFO] Resizing {len(image_paths)} images using {num_workers} threads...")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+        resized_images = list(executor.map(resize_image, image_paths))
+
+    df["image"] = resized_images
+    return df
+
+
+def summarize_dataset(df: pd.DataFrame, label_map: Dict[int, str]):
+    """
+    Prints class-wise image count summary.
+    """
+    counts = df["label"].value_counts().sort_index()
+    print("Dataset Summary")
+    print("-" * 60)
+    print(f"{'Class ID':<12} {'Label Name':<30} {'Count':<10}")
+    print("-" * 60)
+    for class_id, label_name in label_map.items():
+        count = counts.get(class_id, 0)
+        print(f"{class_id:<12} {label_name:<30} {count:<10}")
+    print("-" * 60)
+    print(f"{'Total':<44} {counts.sum():<10}")
+
+
+def load_and_resize_images(dataset_path: str) -> Tuple[pd.DataFrame, Dict[int, str]]:
+    """
+    Full loader pipeline: list images, resize, and return dataframe with label map.
+    """
+    label_map = get_class_mapping(dataset_path)
+    image_df = list_images_with_labels(dataset_path)
+    image_df = parallel_image_loading(image_df)
+    summarize_dataset(image_df, label_map)
+    return image_df, label_map
