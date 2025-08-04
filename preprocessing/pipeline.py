@@ -2,99 +2,78 @@
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.model_selection import train_test_split
 from tensorflow.keras.utils import to_categorical
-from typing import Tuple, Dict
+from typing import Tuple
+
+from data.loader import load_and_resize_images
+from data.augmentation import augment_dataframe, summarize_augmented_data
+from config import Config
 
 
 def normalize_images(images: np.ndarray, method: str = "z-score") -> np.ndarray:
     """
-    Normalize images using the specified method.
-
+    Normalize images using one of several standard methods.
+    
     Args:
-        images (np.ndarray): Raw image array.
-        method (str): Normalization method. Options: "z-score", "min-max", "mean-std"
-
+        images (np.ndarray): Image data array.
+        method (str): One of ['z-score', 'min-max', 'mean-std'].
+    
     Returns:
-        np.ndarray: Normalized image array.
+        np.ndarray: Normalized image data.
     """
     if method == "z-score":
         mean = np.mean(images)
         std = np.std(images)
-        return (images - mean) / std
+        return (images - mean) / (std + 1e-7)
     elif method == "min-max":
         return images / 255.0
     elif method == "mean-std":
         mean = np.mean(images, axis=(0, 1, 2), keepdims=True)
         std = np.std(images, axis=(0, 1, 2), keepdims=True)
-        return (images - mean) / std
+        return (images - mean) / (std + 1e-7)
     else:
         raise ValueError(f"[ERROR] Unknown normalization method: {method}")
 
 
-def reshape_images(images: np.ndarray, target_shape: Tuple[int, int, int]) -> np.ndarray:
+def one_hot_encode(labels: np.ndarray, num_classes: int) -> np.ndarray:
     """
-    Reshape a 4D tensor of images to match (N, H, W, C).
-
+    Convert integer labels into one-hot encoded vectors.
+    
     Args:
-        images (np.ndarray): Raw images.
-        target_shape (Tuple[int, int, int]): Desired (H, W, C)
-
-    Returns:
-        np.ndarray: Reshaped image tensor.
-    """
-    return images.reshape((-1, *target_shape))
-
-
-def encode_labels(labels: np.ndarray, num_classes: int) -> np.ndarray:
-    """
-    Convert integer labels to one-hot encoded format.
-
-    Args:
-        labels (np.ndarray): Array of integer class labels.
+        labels (np.ndarray): Integer labels.
         num_classes (int): Total number of classes.
-
+    
     Returns:
         np.ndarray: One-hot encoded labels.
     """
     return to_categorical(labels, num_classes=num_classes)
 
 
-def stratified_split(
-    features: np.ndarray,
-    labels: np.ndarray,
-    test_size: float = 0.2,
-    val_size: float = 0.2,
-    seed: int = 42
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def stratified_split(X: np.ndarray, y: np.ndarray, seed: int = 42) -> Tuple[np.ndarray, ...]:
     """
-    Split data into stratified train, validation, and test sets.
-
+    Splits X and y into stratified train/val/test sets (60/20/20).
+    
+    Args:
+        X (np.ndarray): Feature images.
+        y (np.ndarray): One-hot encoded labels.
+    
     Returns:
-        x_train, x_val, x_test, y_train, y_val, y_test
+        Tuple: X_train, X_val, X_test, y_train, y_val, y_test
     """
-    print("[INFO] Performing stratified train/val/test split...")
-    flat_labels = np.argmax(labels, axis=1)
+    y_labels = np.argmax(y, axis=1)
 
-    sss1 = StratifiedShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
-    for train_idx, test_idx in sss1.split(features, flat_labels):
-        x_train, x_temp = features[train_idx], features[test_idx]
-        y_train, y_temp = labels[train_idx], labels[test_idx]
-        flat_temp = flat_labels[test_idx]
+    X_temp, X_test, y_temp, y_test = train_test_split(X, y, test_size=0.2, stratify=y_labels, random_state=seed)
+    y_temp_labels = np.argmax(y_temp, axis=1)
+    X_train, X_val, y_train, y_val = train_test_split(X_temp, y_temp, test_size=0.25, stratify=y_temp_labels, random_state=seed)
 
-    sss2 = StratifiedShuffleSplit(n_splits=1, test_size=val_size / (1 - test_size), random_state=seed)
-    for val_idx, test_idx in sss2.split(x_temp, flat_temp):
-        x_val, x_test = x_temp[val_idx], x_temp[test_idx]
-        y_val, y_test = y_temp[val_idx], y_temp[test_idx]
-
-    return x_train, x_val, x_test, y_train, y_val, y_test
+    return X_train, X_val, X_test, y_train, y_val, y_test
 
 
-def summarize_splits(y_train, y_val, y_test, label_map: Dict[int, str]):
-    """Print class-wise distribution across splits."""
+def summarize_splits(y_train, y_val, y_test, label_map):
     print("\n📊 Dataset Summary by Split")
     print("-" * 80)
-    print(f"{'Class ID':<10} {'Class Name':<25} {'Train':<10} {'Val':<10} {'Test':<10} {'Total':<10}")
+    print(f"{'Class ID':<10} {'Label Name':<25} {'Train':<10} {'Val':<10} {'Test':<10} {'Total':<10}")
     print("-" * 80)
 
     for class_id, class_name in label_map.items():
@@ -107,3 +86,39 @@ def summarize_splits(y_train, y_val, y_test, label_map: Dict[int, str]):
 
     print("-" * 80)
     print(f"{'Total':<35} {len(y_train):<10} {len(y_val):<10} {len(y_test):<10} {len(y_train) + len(y_val) + len(y_test):<10}\n")
+
+
+def run_preprocessing(dataset_dir: str, max_per_class: int = 3000, norm_method: str = "z-score"):
+    """
+    Executes the entire preprocessing pipeline:
+    - Loads image data
+    - Applies augmentations
+    - Normalizes images
+    - Splits into train/val/test
+    - One-hot encodes labels
+    
+    Returns:
+        X_train, X_val, X_test, y_train, y_val, y_test
+    """
+    # Load & resize raw images
+    df, label_map = load_and_resize_images(dataset_dir)
+
+    # Augment underrepresented classes
+    df = augment_dataframe(df, max_per_class=max_per_class)
+    summarize_augmented_data(df)
+
+    # Extract features and labels
+    X = np.array(df['image'].tolist())
+    y = np.array(df['label'].tolist())
+
+    # Normalize images
+    X = normalize_images(X, method=norm_method)
+
+    # One-hot encode labels
+    y = one_hot_encode(y, num_classes=Config.NUM_CLASSES)
+
+    # Stratified split
+    X_train, X_val, X_test, y_train, y_val, y_test = stratified_split(X, y)
+    summarize_splits(y_train, y_val, y_test, label_map)
+
+    return X_train, X_val, X_test, y_train, y_val, y_test
