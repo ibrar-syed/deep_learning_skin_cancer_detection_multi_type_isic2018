@@ -1,4 +1,4 @@
-
+#to test the data, the inferencing is done using the pre-trained weights!!!!!!!!!11
 import os
 import numpy as np
 import pandas as pd
