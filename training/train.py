@@ -1,109 +1,122 @@
-# training/train.py
-
 import os
 import argparse
-from datetime import datetime
-
+import datetime
+from tensorflow.keras.callbacks import ModelCheckpoint
 from config import Config
-from preprocessing.pipeline import run_preprocessing
 
-# Model imports (modular, extendable)
+from data.loader import load_and_resize_dataset
+from data.augmentation import augment_dataset
+from data.pipeline import (
+    normalize_images,
+    reshape_images,
+    encode_labels,
+    stratified_split,
+    summarize_splits
+)
+
+# === Dynamic model loading ===
 from models.densenet201 import build_densenet201
-from models.densenet121 import build_densenet121  # placeholder for future file
-from models.nasnetmobile import build_nasnetmobile  # placeholder for future file
+from models.densenet169 import build_densenet169
+from models.densenet121 import build_densenet121
+from models.nasnetmobile import build_nasnetmobile
+from models.mobilenetv2 import build_mobilenetv2
+from models.mobilenetv3 import build_mobilenetv3
+from models.efficientnetv2_b3 import build_efficientnetv2_b3
+from models.efficientnetv2_b7 import build_efficientnetv2_b7
+from models.xceptionnet import build_xceptionnet
+from models.inceptionv3 import build_inceptionv3
+from models.coatnet import build_coatnet
 
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
-
-# Register available models here
+# === Model registry ===
 MODEL_REGISTRY = {
     "densenet201": build_densenet201,
+    "densenet169": build_densenet169,
     "densenet121": build_densenet121,
-    "nasnetmobile": build_nasnetmobile
+    "nasnetmobile": build_nasnetmobile,
+    "mobilenetv2": build_mobilenetv2,
+    "mobilenetv3": build_mobilenetv3,
+    "efficientnetv2_b3": build_efficientnetv2_b3,
+    "efficientnetv2_b7": build_efficientnetv2_b7,
+    "xceptionnet": build_xceptionnet,
+    "inceptionv3": build_inceptionv3,
+    "coatnet": build_coatnet,
 }
 
 
-def train_model(
-    model_name: str,
-    epochs: int,
-    batch_size: int,
-    freeze_base: bool = True,
-    normalization: str = "z-score"
-):
-    """
-    Train a deep learning model on the ISIC dataset.
-
-    Args:
-        model_name (str): Model identifier in MODEL_REGISTRY
-        epochs (int): Training epochs
-        batch_size (int): Mini-batch size
-        freeze_base (bool): Freeze base model weights or not
-        normalization (str): Normalization method to apply
-    """
+def train_model(model_name: str, normalization: str = "z-score", freeze_base: bool = True):
+    print(f"\n Starting training with model: {model_name}")
+    print(f" Normalization method: {normalization}")
+    
     if model_name not in MODEL_REGISTRY:
-        raise ValueError(f"[ERROR] Unsupported model: '{model_name}'. Choose from: {list(MODEL_REGISTRY.keys())}")
+        raise ValueError(f"[ERROR] Unknown model: '{model_name}'. Check your model name.")
 
-    print(f"\n Starting training for model: {model_name}")
-    print(f" Normalization: {normalization} | Freeze base: {freeze_base}")
-    print(" Loading and preprocessing data...")
+    # === 1. Load + Resize ===
+    df, label_map = load_and_resize_dataset(Config.DATASET_PATH, target_size=Config.IMAGE_SHAPE[:2])
 
-    X_train, X_val, X_test, y_train, y_val, y_test = run_preprocessing(
-        dataset_dir=Config.DATA_ROOT,
-        max_per_class=Config.MAX_PER_CLASS,
-        norm_method=normalization
+    # === 2. Augmentation ===
+    augmented_df = augment_dataset(df, max_per_class=Config.MAX_SAMPLES_PER_CLASS)
+
+    # === 3. Preprocessing ===
+    images = augmented_df["image"].values
+    labels = augmented_df["label"].values
+
+    images = reshape_images(images, Config.IMAGE_SHAPE)
+    images = normalize_images(images, method=normalization)
+    labels = encode_labels(labels, num_classes=Config.NUM_CLASSES)
+
+    x_train, x_val, x_test, y_train, y_val, y_test = stratified_split(
+        images, labels,
+        test_size=0.2,
+        val_size=0.1
     )
 
-    # Load model and learning rate scheduler
-    build_fn = MODEL_REGISTRY[model_name]
-    model, lr_scheduler = build_fn(
+    summarize_splits(y_train, y_val, y_test, label_map)
+
+    # === 4. Load Model ===
+    model_builder = MODEL_REGISTRY[model_name]
+    model, lr_scheduler = model_builder(
         input_shape=Config.IMAGE_SHAPE,
         num_classes=Config.NUM_CLASSES,
-        freeze_base=freeze_base
+        freeze_base=freeze_base,
+        learning_rate=Config.LEARNING_RATE
     )
 
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    model_output_path = os.path.join(Config.MODEL_SAVE_PATH, f"{model_name}_{timestamp}.h5")
-    os.makedirs(Config.MODEL_SAVE_PATH, exist_ok=True)
+    # === 5. Setup ModelCheckpoint ===
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    save_name = f"{model_name}_{timestamp}.h5"
+    save_path = os.path.join(Config.MODEL_SAVE_PATH, save_name)
 
-    # Setup callbacks
-    checkpoint = ModelCheckpoint(
-        filepath=model_output_path,
-        monitor="val_accuracy",
-        verbose=1,
+    checkpoint_cb = ModelCheckpoint(
+        filepath=save_path,
+        monitor='val_accuracy',
         save_best_only=True,
-        mode="max"
-    )
-    early_stopping = EarlyStopping(monitor="val_loss", patience=10, restore_best_weights=True)
-
-    print("\n Training model...\n")
-    history = model.fit(
-        x=X_train,
-        y=y_train,
-        validation_data=(X_val, y_val),
-        epochs=epochs,
-        batch_size=batch_size,
-        callbacks=[checkpoint, early_stopping, lr_scheduler],
         verbose=1
     )
 
-    print(f"\n Training complete. Best model saved at: {model_output_path}")
-    return model, history, (X_test, y_test)
+    # === 6. Train Model ===
+    print("\n Beginning training...\n")
+    history = model.fit(
+        x_train, y_train,
+        epochs=Config.EPOCHS,
+        batch_size=Config.BATCH_SIZE,
+        validation_data=(x_val, y_val),
+        callbacks=[checkpoint_cb, lr_scheduler],
+        verbose=1
+    )
+
+    # === 7. Final Evaluation ===
+    print("\n Final evaluation on test set...")
+    loss, acc = model.evaluate(x_test, y_test, verbose=1)
+    print(f" Test Accuracy: {acc:.4f} | Test Loss: {loss:.4f}")
+
+    print(f"\n Training complete. Best model saved to: {save_path}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train selected model on ISIC dataset")
-    parser.add_argument("--model", type=str, required=True, help="Model name (e.g. densenet201, densenet121, nasnetmobile)")
-    parser.add_argument("--epochs", type=int, default=Config.EPOCHS, help="Number of training epochs")
-    parser.add_argument("--batch_size", type=int, default=Config.BATCH_SIZE, help="Batch size for training")
-    parser.add_argument("--freeze", action='store_true', help="Freeze base model layers")
-    parser.add_argument("--norm", type=str, default="z-score", choices=["z-score", "min-max", "mean-std"],
-                        help="Normalization method")
+    parser = argparse.ArgumentParser(description="Train deep learning model on custom dataset")
+    parser.add_argument("--model", required=True, type=str, help="Model name (e.g., densenet201, coatnet, etc.)")
+    parser.add_argument("--norm", default="z-score", type=str, help="Normalization method (z-score | min-max | mean-std)")
+    parser.add_argument("--freeze", action="store_true", help="Freeze pretrained base layers")
 
     args = parser.parse_args()
-
-    train_model(
-        model_name=args.model,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        freeze_base=args.freeze,
-        normalization=args.norm
-    )
+    train_model(model_name=args.model, normalization=args.norm, freeze_base=args.freeze)
