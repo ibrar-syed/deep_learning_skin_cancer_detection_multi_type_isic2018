@@ -1,7 +1,9 @@
 import os
 import argparse
 import datetime
-from tensorflow.keras.callbacks import ModelCheckpoint
+import pandas as pd
+
+from tensorflow.keras.callbacks import ModelCheckpoint, CSVLogger
 from config import Config
 
 from data.loader import load_and_resize_dataset
@@ -14,7 +16,7 @@ from data.pipeline import (
     summarize_splits
 )
 
-# === Dynamic model loading ===
+# === Import all model builders ===
 from models.densenet201 import build_densenet201
 from models.densenet169 import build_densenet169
 from models.densenet121 import build_densenet121
@@ -27,7 +29,7 @@ from models.xceptionnet import build_xceptionnet
 from models.inceptionv3 import build_inceptionv3
 from models.coatnet import build_coatnet
 
-# === Model registry ===
+# === Model selector registry ===
 MODEL_REGISTRY = {
     "densenet201": build_densenet201,
     "densenet169": build_densenet169,
@@ -44,19 +46,20 @@ MODEL_REGISTRY = {
 
 
 def train_model(model_name: str, normalization: str = "z-score", freeze_base: bool = True):
-    print(f"\n Starting training with model: {model_name}")
-    print(f" Normalization method: {normalization}")
-    
-    if model_name not in MODEL_REGISTRY:
-        raise ValueError(f"[ERROR] Unknown model: '{model_name}'. Check your model name.")
+    print(f"\n Training Model: {model_name}")
+    print(f" Normalization Method: {normalization}")
+    print(f"  Freeze Base Layers: {'Yes' if freeze_base else 'No'}")
 
-    # === 1. Load + Resize ===
+    if model_name not in MODEL_REGISTRY:
+        raise ValueError(f"[ERROR] Invalid model '{model_name}' specified.")
+
+    # === Step 1: Load + Resize Images ===
     df, label_map = load_and_resize_dataset(Config.DATASET_PATH, target_size=Config.IMAGE_SHAPE[:2])
 
-    # === 2. Augmentation ===
+    # === Step 2: Augment Dataset ===
     augmented_df = augment_dataset(df, max_per_class=Config.MAX_SAMPLES_PER_CLASS)
 
-    # === 3. Preprocessing ===
+    # === Step 3: Preprocess for Training ===
     images = augmented_df["image"].values
     labels = augmented_df["label"].values
 
@@ -72,7 +75,7 @@ def train_model(model_name: str, normalization: str = "z-score", freeze_base: bo
 
     summarize_splits(y_train, y_val, y_test, label_map)
 
-    # === 4. Load Model ===
+    # === Step 4: Build Model ===
     model_builder = MODEL_REGISTRY[model_name]
     model, lr_scheduler = model_builder(
         input_shape=Config.IMAGE_SHAPE,
@@ -81,42 +84,49 @@ def train_model(model_name: str, normalization: str = "z-score", freeze_base: bo
         learning_rate=Config.LEARNING_RATE
     )
 
-    # === 5. Setup ModelCheckpoint ===
+    # === Step 5: Callbacks Setup ===
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_name = f"{model_name}_{timestamp}.h5"
-    save_path = os.path.join(Config.MODEL_SAVE_PATH, save_name)
+    model_filename = f"{model_name}_{timestamp}.h5"
+    csv_log_filename = f"{model_name}_{timestamp}_log.csv"
+
+    model_save_path = os.path.join(Config.MODEL_SAVE_PATH, model_filename)
+    csv_save_path = os.path.join(Config.MODEL_SAVE_PATH, csv_log_filename)
+
+    os.makedirs(Config.MODEL_SAVE_PATH, exist_ok=True)
 
     checkpoint_cb = ModelCheckpoint(
-        filepath=save_path,
-        monitor='val_accuracy',
+        filepath=model_save_path,
+        monitor="val_accuracy",
         save_best_only=True,
         verbose=1
     )
 
-    # === 6. Train Model ===
-    print("\n Beginning training...\n")
+    csv_logger = CSVLogger(csv_save_path, append=False)
+
+    # === Step 6: Training ===
+    print("\n Starting Training...\n")
     history = model.fit(
         x_train, y_train,
+        validation_data=(x_val, y_val),
         epochs=Config.EPOCHS,
         batch_size=Config.BATCH_SIZE,
-        validation_data=(x_val, y_val),
-        callbacks=[checkpoint_cb, lr_scheduler],
+        callbacks=[checkpoint_cb, csv_logger, lr_scheduler],
         verbose=1
     )
 
-    # === 7. Final Evaluation ===
-    print("\n Final evaluation on test set...")
-    loss, acc = model.evaluate(x_test, y_test, verbose=1)
-    print(f" Test Accuracy: {acc:.4f} | Test Loss: {loss:.4f}")
-
-    print(f"\n Training complete. Best model saved to: {save_path}")
+    # === Step 7: Final Evaluation ===
+    print("\n Evaluating on Test Data...")
+    loss, accuracy = model.evaluate(x_test, y_test, verbose=1)
+    print(f"\n Final Test Accuracy: {accuracy:.4f} | Loss: {loss:.4f}")
+    print(f" Best Model Saved at: {model_save_path}")
+    print(f" Training Log CSV: {csv_save_path}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train deep learning model on custom dataset")
-    parser.add_argument("--model", required=True, type=str, help="Model name (e.g., densenet201, coatnet, etc.)")
-    parser.add_argument("--norm", default="z-score", type=str, help="Normalization method (z-score | min-max | mean-std)")
-    parser.add_argument("--freeze", action="store_true", help="Freeze pretrained base layers")
+    parser = argparse.ArgumentParser(description="Train image classification model")
+    parser.add_argument("--model", required=True, type=str, help="Model name from MODEL_REGISTRY")
+    parser.add_argument("--norm", default="z-score", type=str, help="Normalization method (z-score|min-max|mean-std)")
+    parser.add_argument("--freeze", action="store_true", help="Freeze base layers of pretrained model")
 
     args = parser.parse_args()
     train_model(model_name=args.model, normalization=args.norm, freeze_base=args.freeze)
