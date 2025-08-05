@@ -1,4 +1,4 @@
-###to predict a single imge using the pretrained weights
+###to predict a single images using the pretrained weights
 import os
 import numpy as np
 import argparse
