@@ -1,3 +1,5 @@
+###coatnet.py, for teh skin cancer detection with multi-layer structure
+
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Dense, Dropout, GlobalAveragePooling2D, Conv2D, MultiHeadAttention
 from tensorflow.keras.regularizers import l2
