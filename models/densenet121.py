@@ -1,5 +1,5 @@
 # models/densenet121.py
-
+##for teh skin cancer detection with multi-layer structure
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D, Input
 from tensorflow.keras.applications import DenseNet121
