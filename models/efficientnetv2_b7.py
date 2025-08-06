@@ -1,3 +1,5 @@
+##for teh skin cancer detection with multi-layer structure
+
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D
 from tensorflow.keras.applications.efficientnet_v2 import EfficientNetV2B7
