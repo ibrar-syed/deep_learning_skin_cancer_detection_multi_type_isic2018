@@ -3,7 +3,11 @@ A deep learning pipeline for skin lesion classification using ISIC dataset with 
 
 ## Environment Setup
 
-Install Python 3.8+ and required packages:
+Install Python 3.8+ and required packages 
+
+            or
+
+pip install -r requirements.txt
 
 ###load and resize
 python data/loader.py
