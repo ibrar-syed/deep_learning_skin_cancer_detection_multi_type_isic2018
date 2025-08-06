@@ -1,5 +1,5 @@
 # models/nasnetmobile.py
-
+##for the skin cancer detection with multi-layer structure##for the skin cancer detection with multi-layer structure
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D, Input
 from tensorflow.keras.applications import NASNetMobile
