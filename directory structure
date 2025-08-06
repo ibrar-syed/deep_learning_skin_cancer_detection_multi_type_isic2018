@@ -1,0 +1,17 @@
+.
+├── config.py
+├── data/
+│   ├── loader.py
+│   ├── augmentation.py
+│   └── pipeline.py
+├── models/
+│   ├── densenet201.py
+│   ├── coatnet.py
+│   └── ... (other models)
+├── training/
+│   └── train.py
+├── inference.py
+├── predict_single.py
+├── saved_models/
+├── metrics/
+└── README.md
