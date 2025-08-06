@@ -18,10 +18,12 @@ class Config:
         0: "melanoma",
         1: "nevus",
         2: "bcc",
-        3: "akiec",
-        4: "vasc",
+        3: "sqcc",
+        4: "acke",
         5: "df",
-        6: "bkl"
+        6: "bkl,
+        7: "sebok",
+        8: "VL"
     }
 
     NUM_CLASSES = len(CLASS_LABELS)
