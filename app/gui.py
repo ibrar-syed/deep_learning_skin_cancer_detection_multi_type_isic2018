@@ -1,4 +1,4 @@
-# app.py
+# app.py, front/back end
 
 import streamlit as st
 import numpy as np
