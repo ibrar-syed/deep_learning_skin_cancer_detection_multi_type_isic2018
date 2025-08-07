@@ -24,6 +24,25 @@ python training/train.py --model <model_name>
 #for inference on test data
 python inference.py --model_path saved_models/densenet201.h5
 
-#To run ssingle predict image file
+##Make sure the following are in place before running:
+1. saved_models/ directory exists with trained .h5 files.
+2. Your environment has TensorFlow, Streamlit, Seaborn, PIL, and Matplotlib installed.
+
+
+#To run single predict image file
 python predict_single.py --image_path path/to/image.jpg --model_path saved_models/densenet201.h5
+
+
+
+## to run the inferece using the front/back end, uisng the streamlit lib,
+streamlit run ./app/gui.py
+
+What and How This App Works:
+1. Loads trained model dynamically from the saved_models/ directory.
+2. Processes an uploaded dermoscopic image using TensorFlow preprocessing.
+3. Runs inference on the selected model.
+4. Displays the predicted skin cancer class and confidence.
+5. Visualizes class confidence using a bar plot via Seaborn.
+6. Fully integrated with the earlier single_predict logic for robustness.
+
 
