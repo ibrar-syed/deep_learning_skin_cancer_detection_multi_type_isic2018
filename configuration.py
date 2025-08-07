@@ -16,15 +16,18 @@ class Config:
 
     # Label Mapping (example for ISIC dataset with 7 classes)
     CLASS_LABELS = {
-        0: "melanoma",
-        1: "nevus",
-        2: "bcc",
-        3: "sqcc",
-        4: "acke",
-        5: "df",
-        6: "bkl,
-        7: "sebok",
-        8: "VL"
+      LABEL_MAP = {
+    0: "Melanoma",
+    1: "Basal Cell Carcinoma",
+    2: "Squamous Cell Carcinoma",
+    3: "Nevus",
+    4: "Actinic Keratosis",
+    5: "Seborrheic Keratosis",
+    6: "Dermatofibroma",
+    7: "Vascular Lesion",
+    8: "Other"
+}
+
     }
 
     NUM_CLASSES = len(CLASS_LABELS)
