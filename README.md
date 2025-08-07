@@ -43,6 +43,6 @@ What and How This App Works:
 3. Runs inference on the selected model.
 4. Displays the predicted skin cancer class and confidence.
 5. Visualizes class confidence using a bar plot via Seaborn.
-6. Fully integrated with the earlier single_predict logic for robustness.
+6. Fully integrated with the earlier single_predict logic for robustness. (In Progress)
 
 
