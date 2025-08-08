@@ -46,3 +46,5 @@ What and How This App Works:
 6. Fully integrated with the earlier single_predict logic for robustness. (In Progress)
 
 
+## License
+This project is licensed under the GNU General Public License v3.0 - see the LICENSE file for details.
