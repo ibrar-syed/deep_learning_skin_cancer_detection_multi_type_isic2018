@@ -81,6 +81,8 @@ class Config:
         "coatnet": "models.coatnet",
     }
 
+
+    
     @staticmethod
     def ensure_directories():
         """Create required directories if not already present."""
