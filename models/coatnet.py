@@ -16,7 +16,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-###coatnet.py, for teh skin cancer detection with multi-layer structure
+####coatnet.py, for teh skin cancer detection with multi-layer structure
 
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Dense, Dropout, GlobalAveragePooling2D, Conv2D, MultiHeadAttention
