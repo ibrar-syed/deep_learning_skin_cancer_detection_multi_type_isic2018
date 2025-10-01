@@ -1,4 +1,4 @@
-#the structure of folders are as given below
+#the structure of folders is given below
 ├── config.py
 ├── data/
 │   ├── loader.py
