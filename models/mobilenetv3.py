@@ -1,4 +1,4 @@
-##for the skin cancer detection with multi-layer structure
+##for the skin cancer detection with multi-layer structure,...
 # Copyright (C) 2025 ibrar-syed <syed.ibraras@gmail.com>
 # This file is part of the Skin Cancer Detection Project.
 ##
