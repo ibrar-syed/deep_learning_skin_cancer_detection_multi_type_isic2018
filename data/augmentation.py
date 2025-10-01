@@ -1,5 +1,5 @@
 # data/augmentation.py
-# Copyright (C) 2025 ibrar-syed <syed.ibraras@gmail.com>
+# Copyright (C) 2025 ibrar-syed <syed.ibraras@gmail.com>.
 # This file is part of the Skin Cancer Detection Project.
 #
 # This program is free software: you can redistribute it and/or modify
