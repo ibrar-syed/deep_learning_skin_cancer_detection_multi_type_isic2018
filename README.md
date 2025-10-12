@@ -10,7 +10,7 @@ Install Python 3.8+ and required packages
 
 pip install -r requirements.txt
 
-###Load and resize
+###Load and Resize
 python data/loader.py
 
 # To preprocess, Normalize, Encode, and Split Data, Balance and augments data
