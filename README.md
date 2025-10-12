@@ -13,7 +13,7 @@ pip install -r requirements.txt
 ###Load and Resize
 python data/loader.py
 
-# To preprocess, Normalize, Encode, and Split Data, Balance and augments data
+# To preprocess, Normalize, Encode, and Split Data, Balance and Augment data
 python data/pipeline.py
 python data/augmentation.py
 
