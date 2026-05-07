@@ -5,5 +5,5 @@ path = kagglehub.dataset_download("nodoubttome/skin-cancer9-classesisic")
 
 print("Path to dataset files:", path)
 
-##or from this link
+# from this link
 https://www.kaggle.com/datasets/syedibrarhussain/isic-2019-skin-cancer-detection-dataset
