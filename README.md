@@ -17,8 +17,6 @@ python data/loader.py
 python data/pipeline.py
 python data/augmentation.py
 
-
-
 #for training, choose any model!..
 python training/train.py --model <model_name>
 
