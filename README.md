@@ -1,6 +1,6 @@
 # deep_learning_skin_cancer_detection_multi_type_ISIC_2018
 
-A deep-learning pipeline for skin lesion classification using ISIC dataset with multiple deep learning CNN algorithms and advanced preprocessing including multithreaded loading, augmentation, and performance evaluation
+A deep-learning pipeline for skin lesion classification using ISIC dataset with multiple deep learning CNN algorithms and advanced preprocessing including multithreaded loading, augmentation, and performance evaluation.
 
 ## Environment Setup
 
